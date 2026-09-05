@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+
+dist/
+build/
+
+*.log
+
+frontend/test-1000.csv
+frontend/test-leads.csv
+frontend/test-leads.txt
+frontend/test-leads.pdf
