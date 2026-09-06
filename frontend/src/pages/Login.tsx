@@ -3,7 +3,7 @@ import { Mail } from "lucide-react";
 export default function Login() {
   const handleGoogleLogin = () => {
     window.location.href =
-      "http://localhost:5000/auth/google";
+  "/auth/google";
   };
 
   return (
