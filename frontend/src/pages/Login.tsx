@@ -2,12 +2,8 @@ import { Mail } from "lucide-react";
 
 export default function Login() {
   const handleGoogleLogin = () => {
-  const backendUrl =
-    import.meta.env.VITE_API_URL ||
-    "http://localhost:5000";
-
   window.location.href =
-    `${backendUrl}/auth/google`;
+    "https://reachinbox-email-scheduler-i8re.onrender.com/auth/google";
 };
 
   return (
