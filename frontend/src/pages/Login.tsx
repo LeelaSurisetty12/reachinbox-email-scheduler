@@ -2,9 +2,13 @@ import { Mail } from "lucide-react";
 
 export default function Login() {
   const handleGoogleLogin = () => {
-    window.location.href =
-  "/auth/google";
-  };
+  const backendUrl =
+    import.meta.env.VITE_API_URL ||
+    "http://localhost:5000";
+
+  window.location.href =
+    `${backendUrl}/auth/google`;
+};
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
