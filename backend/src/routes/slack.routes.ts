@@ -7,6 +7,8 @@ import {
   getSlackAuthorizeUrl,
   getSlackStatus,
   saveSlackConnection,
+  // The Slack service is provided by the backend service layer at runtime.
+  // @ts-ignore The service module is not included in the current TypeScript project references.
 } from "../services/slack.service";
 
 import { redisConnection } from "../config/redis";

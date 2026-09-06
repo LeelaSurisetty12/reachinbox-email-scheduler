@@ -15,7 +15,9 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import { useNavigate } from "react-router-dom";
+import {
+  useNavigate,
+} from "react-router-dom";
 
 import toast from "react-hot-toast";
 
@@ -131,20 +133,21 @@ export default function Dashboard() {
   // LOGOUT
   // =====================================================
 
-  const handleLogout = async () => {
-    try {
-      await api.post(
-        "/api/auth/logout"
-      );
-    } catch (error) {
-      console.error(
-        "Logout error:",
-        error
-      );
-    } finally {
-      navigate("/login");
-    }
-  };
+  const handleLogout =
+    async () => {
+      try {
+        await api.post(
+          "/api/auth/logout"
+        );
+      } catch (error) {
+        console.error(
+          "Logout error:",
+          error
+        );
+      } finally {
+        navigate("/login");
+      }
+    };
 
   // =====================================================
   // LOAD USER
@@ -235,6 +238,7 @@ export default function Dashboard() {
           api.get(
             "/api/emails/scheduled"
           ),
+
           api.get(
             "/api/emails/sent"
           ),
@@ -264,26 +268,27 @@ export default function Dashboard() {
     };
 
   // =====================================================
-  // LOAD EMAILS WHEN USER IS AVAILABLE
+  // AUTO REFRESH
   // =====================================================
 
- useEffect(() => {
-  if (!user) {
-    return;
-  }
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
 
-  // Load immediately
-  loadEmails();
-
-  // Refresh every 5 seconds
-  const interval = setInterval(() => {
     loadEmails();
-  }, 5000);
 
-  return () => {
-    clearInterval(interval);
-  };
-}, [user]);
+    const interval =
+      window.setInterval(() => {
+        loadEmails();
+      }, 5000);
+
+    return () => {
+      window.clearInterval(
+        interval
+      );
+    };
+  }, [user]);
 
   // =====================================================
   // LOAD SENDERS
@@ -421,6 +426,15 @@ export default function Dashboard() {
 
   const handleDisconnectSlack =
     async () => {
+      const confirmed =
+        window.confirm(
+          "Disconnect Slack from ReachInbox?"
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
       setSlackLoading(true);
 
       try {
@@ -450,6 +464,90 @@ export default function Dashboard() {
     };
 
   // =====================================================
+  // DELETE ONE EMAIL
+  // =====================================================
+
+  const handleDeleteEmail =
+    async (
+      emailId: string
+    ) => {
+      const confirmed =
+        window.confirm(
+          "Are you sure you want to delete this email?"
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        await api.delete(
+          `/api/emails/${emailId}`
+        );
+
+        toast.success(
+          "Email deleted successfully"
+        );
+
+        await loadEmails();
+      } catch (error) {
+        console.error(
+          "Delete email error:",
+          error
+        );
+
+        toast.error(
+          "Failed to delete email"
+        );
+      }
+    };
+
+  // =====================================================
+  // DELETE MANY EMAILS
+  // =====================================================
+
+  const handleDeleteManyEmails =
+    async (
+      emailIds: string[]
+    ) => {
+      if (
+        emailIds.length ===
+        0
+      ) {
+        return;
+      }
+
+      try {
+        await api.post(
+          "/api/emails/bulk-delete",
+          {
+            emailIds,
+          }
+        );
+
+        toast.success(
+          `${emailIds.length} email${
+            emailIds.length ===
+            1
+              ? ""
+              : "s"
+          } deleted successfully`
+        );
+
+        await loadEmails();
+      } catch (error) {
+        console.error(
+          "Bulk delete error:",
+          error
+        );
+
+        toast.error(
+          "Failed to delete selected emails"
+        );
+      }
+    };
+
+  // =====================================================
   // SEARCH
   // =====================================================
 
@@ -460,7 +558,9 @@ export default function Dashboard() {
 
       if (!query) {
         setSearchActive(false);
+
         await loadEmails();
+
         return;
       }
 
@@ -504,7 +604,8 @@ export default function Dashboard() {
         setSearchActive(true);
 
         if (
-          results.length === 0
+          results.length ===
+          0
         ) {
           toast(
             "No matching emails found."
@@ -533,8 +634,7 @@ export default function Dashboard() {
       event: KeyboardEvent<HTMLInputElement>
     ) => {
       if (
-        event.key ===
-        "Enter"
+        event.key === "Enter"
       ) {
         handleSearch();
       }
@@ -553,7 +653,20 @@ export default function Dashboard() {
     };
 
   // =====================================================
-  // LOADING USER
+  // MANUAL REFRESH
+  // =====================================================
+
+  const handleRefresh =
+    async () => {
+      await loadEmails();
+
+      toast.success(
+        "Dashboard refreshed"
+      );
+    };
+
+  // =====================================================
+  // LOADING
   // =====================================================
 
   if (loadingUser) {
@@ -575,7 +688,7 @@ export default function Dashboard() {
   }
 
   // =====================================================
-  // DISPLAYED EMAILS
+  // CURRENT EMAIL LIST
   // =====================================================
 
   const displayedEmails =
@@ -664,9 +777,9 @@ export default function Dashboard() {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="space-y-8">
 
-          {/* ============================================= */}
-          {/* PAGE HEADING */}
-          {/* ============================================= */}
+          {/* ================================================= */}
+          {/* PAGE HEADER                                         */}
+          {/* ================================================= */}
 
           <section className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
 
@@ -739,15 +852,15 @@ export default function Dashboard() {
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus className="h-4 w-4" />
-
                 Compose New Email
               </button>
+
             </div>
           </section>
 
-          {/* ============================================= */}
-          {/* ACTIVE SENDER */}
-          {/* ============================================= */}
+          {/* ================================================= */}
+          {/* ACTIVE SENDER                                      */}
+          {/* ================================================= */}
 
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -771,12 +884,13 @@ export default function Dashboard() {
                   ? ""
                   : "s"} connected
               </div>
+
             </div>
           </section>
 
-          {/* ============================================= */}
+          {/* ================================================= */}
           {/* STATS */}
-          {/* ============================================= */}
+          {/* ================================================= */}
 
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
@@ -831,11 +945,12 @@ export default function Dashboard() {
 
               </div>
             </div>
+
           </section>
 
-          {/* ============================================= */}
+          {/* ================================================= */}
           {/* TABS */}
-          {/* ============================================= */}
+          {/* ================================================= */}
 
           <section>
             <div className="border-b border-slate-800">
@@ -879,13 +994,13 @@ export default function Dashboard() {
             </div>
           </section>
 
-          {/* ============================================= */}
-          {/* EMAIL LIST */}
-          {/* ============================================= */}
+          {/* ================================================= */}
+          {/* EMAILS                                             */}
+          {/* ================================================= */}
 
           <section className="space-y-4">
 
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
 
               <div>
                 <h3 className="text-lg font-semibold">
@@ -901,17 +1016,20 @@ export default function Dashboard() {
                   1
                     ? ""
                     : "s"}
+
                   {searchActive
                     ? " found"
                     : ""}
                 </p>
               </div>
 
-              {/* Search */}
+              {/* ================================================= */}
+              {/* SEARCH + REFRESH                                   */}
+              {/* ================================================= */}
 
-              <div className="flex w-full max-w-xl gap-2">
+              <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
 
-                <div className="flex flex-1 items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5">
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 xl:w-80">
 
                   <Search className="h-4 w-4 shrink-0 text-slate-500" />
 
@@ -932,21 +1050,10 @@ export default function Dashboard() {
                       handleSearchKeyDown
                     }
                     placeholder="Search emails..."
-                    className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
+                    className="min-w-0 w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
                   />
-                </div>
 
-                {searchActive && (
-                  <button
-                    type="button"
-                    onClick={
-                      clearSearch
-                    }
-                    className="rounded-xl border border-slate-700 px-3 py-2.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
-                  >
-                    Clear
-                  </button>
-                )}
+                </div>
 
                 <button
                   type="button"
@@ -962,27 +1069,47 @@ export default function Dashboard() {
                     ? "..."
                     : "Search"}
                 </button>
+
+                {searchActive && (
+                  <button
+                    type="button"
+                    onClick={
+                      clearSearch
+                    }
+                    className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                  >
+                    Clear
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={
+                    handleRefresh
+                  }
+                  disabled={
+                    loadingEmails
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Refresh emails"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${
+                      loadingEmails
+                        ? "animate-spin"
+                        : ""
+                    }`}
+                  />
+
+                  Refresh
+                </button>
+
               </div>
             </div>
 
-            <button
-  type="button"
-  onClick={loadEmails}
-  disabled={loadingEmails}
-  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
->
-  <RefreshCw
-    className={`h-4 w-4 ${
-      loadingEmails
-        ? "animate-spin"
-        : ""
-    }`}
-  />
-
-  Refresh
-</button>
-
-            {/* Table */}
+            {/* ================================================= */}
+            {/* EMAIL TABLE                                        */}
+            {/* ================================================= */}
 
             {loadingEmails ||
             searching ? (
@@ -997,6 +1124,7 @@ export default function Dashboard() {
                   </p>
 
                 </div>
+
               </div>
             ) : (
               <EmailTable
@@ -1006,14 +1134,21 @@ export default function Dashboard() {
                 type={
                   activeTab
                 }
+                onDelete={
+                  handleDeleteEmail
+                }
+                onDeleteMany={
+                  handleDeleteManyEmails
+                }
               />
             )}
+
           </section>
         </div>
       </main>
 
       {/* ================================================= */}
-      {/* COMPOSE MODAL */}
+      {/* COMPOSE MODAL                                       */}
       {/* ================================================= */}
 
       {showCompose && (

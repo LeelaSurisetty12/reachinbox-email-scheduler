@@ -5,7 +5,11 @@ type RecoverableEmail = {
   id: string;
   bullJobId: string | null;
   scheduledAt: Date;
-  status: "SCHEDULED" | "PROCESSING";
+  status:
+    | "SCHEDULED"
+    | "PROCESSING"
+    | "SENT"
+    | "FAILED";
 };
 
 async function ensureBullMQJob(

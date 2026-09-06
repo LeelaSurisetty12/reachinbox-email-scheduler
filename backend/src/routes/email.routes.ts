@@ -5,6 +5,8 @@ import { prisma } from "../config/prisma";
 import {
   indexEmail,
   searchEmails,
+  deleteEmailFromIndex,
+  deleteEmailsFromIndex,
 } from "../services/elasticsearch.service";
 
 import { emailQueue } from "../services/email.queue";
@@ -222,16 +224,23 @@ router.post(
       // -----------------------------------------------
 
       const job =
-        await emailQueue.add(
-          "send-email",
-          {
-            emailId: email.id,
-          },
-          {
-            delay,
-            jobId: email.id,
-          }
-        );
+  await emailQueue.add(
+    "send-email",
+    {
+      emailId: email.id,
+    },
+    {
+      delay,
+      jobId: email.id,
+
+      attempts: 5,
+
+      backoff: {
+        type: "exponential",
+        delay: 5000,
+      },
+    }
+  );
 
       // -----------------------------------------------
       // Save BullMQ job ID
@@ -261,9 +270,9 @@ router.post(
           status:
             email.status,
           delayMs:
-            email.delayMs,
+            parsedDelayMs,
           hourlyLimit:
-            email.hourlyLimit,
+            parsedHourlyLimit,
           bullJobId:
             job.id,
         },
@@ -577,13 +586,21 @@ router.post(
                 emailId: email.id,
               },
               opts: {
-                delay: Math.max(
-                  0,
-                  email.scheduledAt.getTime() -
-                    Date.now()
-                ),
-                jobId: email.id,
-              },
+  delay: Math.max(
+    0,
+    email.scheduledAt.getTime() -
+      Date.now()
+  ),
+
+  jobId: email.id,
+
+  attempts: 5,
+
+  backoff: {
+    type: "exponential",
+    delay: 5000,
+  },
+},
             })
           )
         );
@@ -851,6 +868,307 @@ router.get(
         success: false,
         message:
           "Failed to search emails",
+      });
+    }
+  }
+);
+// =====================================================
+// DELETE /api/emails/:id
+// Delete an email owned by the authenticated user
+// =====================================================
+
+router.delete(
+  "/:id",
+  requireAuth,
+  async (
+    req: AuthenticatedRequest,
+    res
+  ) => {
+    try {
+      const userId = req.userId;
+      const emailId = req.params.id;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authentication required",
+        });
+      }
+
+      if (typeof emailId !== "string" || !emailId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Email id is required",
+        });
+      }
+
+      // ---------------------------------------------
+      // Make sure the email belongs to this user
+      // ---------------------------------------------
+
+      const email =
+        await prisma.email.findFirst({
+          where: {
+            id: emailId,
+            userId,
+          },
+        });
+
+      if (!email) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Email not found",
+        });
+      }
+
+      // ---------------------------------------------
+      // Remove BullMQ job if one exists
+      // ---------------------------------------------
+
+      if (email.bullJobId) {
+        try {
+          const job =
+            await emailQueue.getJob(
+              email.bullJobId
+            );
+
+          if (job) {
+            const state =
+              await job.getState();
+
+            // A scheduled/waiting/delayed job
+            // can be safely removed.
+            if (
+              state === "waiting" ||
+              state === "delayed"
+            ) {
+              await job.remove();
+
+              console.log(
+                `Deleted BullMQ job ${email.bullJobId}`
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            "Failed to remove BullMQ job:",
+            error
+          );
+        }
+      }
+
+      // ---------------------------------------------
+      // Delete database record
+      // ---------------------------------------------
+
+      await prisma.email.delete({
+        where: {
+          id: emailId,
+        },
+      });
+      try {
+  await deleteEmailFromIndex(
+    emailId
+  );
+} catch (error) {
+  console.error(
+    "Failed to delete email from Elasticsearch:",
+    error
+  );
+}
+
+      return res.json({
+        success: true,
+        message:
+          "Email deleted successfully",
+        emailId,
+      });
+    } catch (error) {
+      console.error(
+        "Delete email error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to delete email",
+      });
+    }
+  }
+);
+// =====================================================
+// POST /api/emails/bulk-delete
+// Delete multiple emails owned by authenticated user
+// =====================================================
+
+router.post(
+  "/bulk-delete",
+  requireAuth,
+  async (
+    req: AuthenticatedRequest,
+    res
+  ) => {
+    try {
+      const userId =
+        req.userId;
+
+      const {
+        emailIds,
+      } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authentication required",
+        });
+      }
+
+      if (
+        !Array.isArray(emailIds) ||
+        emailIds.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "emailIds must contain at least one email id",
+        });
+      }
+
+      if (
+        emailIds.length > 5000
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Maximum 5000 emails can be deleted at once",
+        });
+      }
+
+      // ---------------------------------------------
+      // Find only emails belonging to current user
+      // ---------------------------------------------
+
+      const emails =
+        await prisma.email.findMany({
+          where: {
+            id: {
+              in: emailIds,
+            },
+            userId,
+          },
+
+          select: {
+            id: true,
+            bullJobId: true,
+          },
+        });
+
+      if (
+        emails.length === 0
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "No matching emails found",
+        });
+      }
+
+      // ---------------------------------------------
+      // Remove queue jobs
+      // ---------------------------------------------
+
+      await Promise.all(
+        emails.map(
+          async (email) => {
+            if (
+              !email.bullJobId
+            ) {
+              return;
+            }
+
+            try {
+              const job =
+                await emailQueue.getJob(
+                  email.bullJobId
+                );
+
+              if (!job) {
+                return;
+              }
+
+              const state =
+                await job.getState();
+
+              if (
+                state ===
+                  "waiting" ||
+                state ===
+                  "delayed"
+              ) {
+                await job.remove();
+              }
+            } catch (error) {
+              console.error(
+                `Failed to remove BullMQ job for email ${email.id}:`,
+                error
+              );
+            }
+          }
+        )
+      );
+
+      // ---------------------------------------------
+      // Delete database records
+      // ---------------------------------------------
+
+      const result =
+        await prisma.email.deleteMany({
+          where: {
+            id: {
+              in: emails.map(
+                (email) =>
+                  email.id
+              ),
+            },
+            userId,
+          },
+        });
+        try {
+  await deleteEmailsFromIndex(
+    emails.map(
+      (email) =>
+        email.id
+    )
+  );
+} catch (error) {
+  console.error(
+    "Failed to delete emails from Elasticsearch:",
+    error
+  );
+}
+
+      return res.json({
+        success: true,
+        message:
+          "Emails deleted successfully",
+        deletedCount:
+          result.count,
+      });
+    } catch (error) {
+      console.error(
+        "Bulk delete error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to delete emails",
       });
     }
   }
